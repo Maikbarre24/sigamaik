@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributore di Sigarette Bluetooth</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f9;
+        }
+        h1 {
+            color: #333;
+        }
+        #devices {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            width: 300px;
+            text-align: center;
+            font-size: 1.1em;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        input {
+            padding: 10px;
+            font-size: 1em;
+            width: 300px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Distributore di Sigarette Bluetooth</h1>
+    <button id="scanButton">Scansiona dispositivi Bluetooth</button>
+    <div id="devices"></div>
+    <div id="controlPanel" style="display:none;">
+        <h3>Comando al Distributore</h3>
+        <input type="text" id="commandInput" placeholder="Inserisci il comando">
+        <button id="sendCommand">Invia Comando</button>
+        <p id="response" style="margin-top: 10px; color: green;"></p>
+    </div>
+
+    <script>
+        let connectedDevice = null;
+        let deviceServer = null;
+        let writeCharacteristic = null;
+
+        const scanButton = document.getElementById('scanButton');
+        const devicesDiv = document.getElementById('devices');
+        const controlPanel = document.getElementById('controlPanel');
+        const sendCommandButton = document.getElementById('sendCommand');
+        const responseParagraph = document.getElementById('response');
+        const commandInput = document.getElementById('commandInput');
+
+        // Scansione dispositivi
+        scanButton.addEventListener('click', async () => {
+            try {
+                devicesDiv.innerHTML = "Scansione in corso...";
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true, // Accetta tutti i dispositivi
+                    optionalServices: [] // Non specificare UUID per trovare tutti i dispositivi
+                });
+
+                devicesDiv.innerHTML = `Trovato dispositivo: ${device.name || 'Sconosciuto'}<br>Connettendo...`;
+                connectedDevice = device;
+
+                // Connessione al dispositivo
+                deviceServer = await device.gatt.connect();
+                const services = await deviceServer.getPrimaryServices(); // Ottieni tutti i servizi
+                for (const service of services) {
+                    const characteristics = await service.getCharacteristics();
+                    for (const characteristic of characteristics) {
+                        // Trova qualsiasi caratteristica scrivibile
+                        if (characteristic.properties.write) {
+                            writeCharacteristic = characteristic;
+                            break;
+                        }
+                    }
+                    if (writeCharacteristic) break;
+                }
+
+                if (writeCharacteristic) {
+                    devicesDiv.innerHTML = `Connesso a: ${device.name || 'Sconosciuto'}`;
+                    controlPanel.style.display = 'block';
+                } else {
+                    devicesDiv.innerHTML = "Nessuna caratteristica scrivibile trovata.";
+                    controlPanel.style.display = 'block';  // Mostra comunque il pannello di controllo
+                }
+            } catch (error) {
+                devicesDiv.innerHTML = `Errore durante la scansione: ${error.message}`;
+            }
+        });
+
+        // Invio comando
+        sendCommandButton.addEventListener('click', async () => {
+            const command = commandInput.value;
+            if (!command) {
+                responseParagraph.textContent = "Errore: comando vuoto!";
+                responseParagraph.style.color = 'red';
+                return;
+            }
+
+            if (!writeCharacteristic) {
+                // Se non c'è una caratteristica scrivibile, invia comunque il comando, ma senza inviarlo a una caratteristica
+                responseParagraph.textContent = `Comando inviato (ma senza caratteristica scrivibile): "${command}"`;
+                responseParagraph.style.color = 'orange'; // Colore arancione per indicare che il comando è stato inviato ma non scritto
+                return;
+            }
+
+            try {
+                const encoder = new TextEncoder();
+                await writeCharacteristic.writeValue(encoder.encode(command));
+                responseParagraph.textContent = `Comando inviato: "${command}"`;
+                responseParagraph.style.color = 'green';
+            } catch (error) {
+                responseParagraph.textContent = `Errore nell'invio: ${error.message}`;
+                responseParagraph.style.color = 'red';
+            }
+        });
+    </script>
+</body>
+</html>
