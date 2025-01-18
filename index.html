@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Distributore di Sigarette Bluetooth</title>
+    <title>Distributore Bluetooth e QR</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -19,7 +19,10 @@
         h1 {
             color: #333;
         }
-        #devices {
+        .option {
+            margin: 10px;
+        }
+        #devices, #qrScanner {
             margin-top: 20px;
             padding: 10px;
             border: 1px solid #ccc;
@@ -46,15 +49,52 @@
             width: 300px;
             margin: 10px 0;
         }
+        #qrReader {
+            width: 300px;
+            height: 300px;
+            margin-top: 10px;
+        }
+        #selectionPanel {
+            margin-top: 20px;
+            display: none;
+        }
+        #selectionPanel button {
+            margin: 5px;
+        }
     </style>
+    <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
 </head>
 <body>
-    <h1>Distributore di Sigarette Bluetooth</h1>
-    <button id="scanButton">Scansiona dispositivi Bluetooth</button>
-    <div id="devices"></div>
+    <h1>Distributore Bluetooth e QR</h1>
+
+    <div class="option">
+        <button id="bluetoothOption">Connetti tramite Bluetooth</button>
+        <button id="qrOption">Connetti tramite QR</button>
+    </div>
+
+    <div id="bluetoothInterface" style="display:none;">
+        <h3>Connessione Bluetooth</h3>
+        <button id="scanButton">Scansiona dispositivi Bluetooth</button>
+        <div id="devices"></div>
+    </div>
+
+    <div id="qrInterface" style="display:none;">
+        <h3>Connessione tramite QR</h3>
+        <div id="qrScanner">
+            <div id="qrReader"></div>
+            <p id="qrResult">Scansiona un codice QR...</p>
+        </div>
+    </div>
+
     <div id="controlPanel" style="display:none;">
         <h3>Comando al Distributore</h3>
-        <input type="text" id="commandInput" placeholder="Inserisci il comando">
+        <div id="selectionPanel">
+            <h4>Seleziona un'azione:</h4>
+            <button class="itemButton" data-item="Sigaretta 1">Sigaretta 1</button>
+            <button class="itemButton" data-item="Sigaretta 2">Sigaretta 2</button>
+            <button class="itemButton" data-item="Sigaretta 3">Sigaretta 3</button>
+        </div>
+        <input type="text" id="commandInput" placeholder="Inserisci un comando personalizzato">
         <button id="sendCommand">Invia Comando</button>
         <p id="response" style="margin-top: 10px; color: green;"></p>
     </div>
@@ -63,33 +103,51 @@
         let connectedDevice = null;
         let deviceServer = null;
         let writeCharacteristic = null;
+        const qrReader = new Html5Qrcode("qrReader");
 
+        const bluetoothOption = document.getElementById('bluetoothOption');
+        const qrOption = document.getElementById('qrOption');
+        const bluetoothInterface = document.getElementById('bluetoothInterface');
+        const qrInterface = document.getElementById('qrInterface');
         const scanButton = document.getElementById('scanButton');
         const devicesDiv = document.getElementById('devices');
         const controlPanel = document.getElementById('controlPanel');
+        const selectionPanel = document.getElementById('selectionPanel');
         const sendCommandButton = document.getElementById('sendCommand');
         const responseParagraph = document.getElementById('response');
         const commandInput = document.getElementById('commandInput');
+        const qrResult = document.getElementById('qrResult');
 
-        // Scansione dispositivi
+        // Mostra interfaccia Bluetooth
+        bluetoothOption.addEventListener('click', () => {
+            bluetoothInterface.style.display = 'block';
+            qrInterface.style.display = 'none';
+        });
+
+        // Mostra interfaccia QR
+        qrOption.addEventListener('click', () => {
+            bluetoothInterface.style.display = 'none';
+            qrInterface.style.display = 'block';
+            startQRScanner();
+        });
+
+        // Scansione dispositivi Bluetooth
         scanButton.addEventListener('click', async () => {
             try {
                 devicesDiv.innerHTML = "Scansione in corso...";
                 const device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true, // Accetta tutti i dispositivi
-                    optionalServices: [] // Non specificare UUID per trovare tutti i dispositivi
+                    acceptAllDevices: true,
+                    optionalServices: []
                 });
 
                 devicesDiv.innerHTML = `Trovato dispositivo: ${device.name || 'Sconosciuto'}<br>Connettendo...`;
                 connectedDevice = device;
 
-                // Connessione al dispositivo
                 deviceServer = await device.gatt.connect();
-                const services = await deviceServer.getPrimaryServices(); // Ottieni tutti i servizi
+                const services = await deviceServer.getPrimaryServices();
                 for (const service of services) {
                     const characteristics = await service.getCharacteristics();
                     for (const characteristic of characteristics) {
-                        // Trova qualsiasi caratteristica scrivibile
                         if (characteristic.properties.write) {
                             writeCharacteristic = characteristic;
                             break;
@@ -101,9 +159,9 @@
                 if (writeCharacteristic) {
                     devicesDiv.innerHTML = `Connesso a: ${device.name || 'Sconosciuto'}`;
                     controlPanel.style.display = 'block';
+                    selectionPanel.style.display = 'block';
                 } else {
                     devicesDiv.innerHTML = "Nessuna caratteristica scrivibile trovata.";
-                    controlPanel.style.display = 'block';  // Mostra comunque il pannello di controllo
                 }
             } catch (error) {
                 devicesDiv.innerHTML = `Errore durante la scansione: ${error.message}`;
@@ -120,9 +178,8 @@
             }
 
             if (!writeCharacteristic) {
-                // Se non c'è una caratteristica scrivibile, invia comunque il comando, ma senza inviarlo a una caratteristica
                 responseParagraph.textContent = `Comando inviato (ma senza caratteristica scrivibile): "${command}"`;
-                responseParagraph.style.color = 'orange'; // Colore arancione per indicare che il comando è stato inviato ma non scritto
+                responseParagraph.style.color = 'orange';
                 return;
             }
 
@@ -136,6 +193,44 @@
                 responseParagraph.style.color = 'red';
             }
         });
+
+        // Pulsanti predefiniti
+        document.querySelectorAll('.itemButton').forEach(button => {
+            button.addEventListener('click', async (event) => {
+                const item = event.target.getAttribute('data-item');
+                if (!writeCharacteristic) {
+                    responseParagraph.textContent = `Comando inviato (ma senza caratteristica scrivibile): "${item}"`;
+                    responseParagraph.style.color = 'orange';
+                    return;
+                }
+                try {
+                    const encoder = new TextEncoder();
+                    await writeCharacteristic.writeValue(encoder.encode(item));
+                    responseParagraph.textContent = `Comando inviato: "${item}"`;
+                    responseParagraph.style.color = 'green';
+                } catch (error) {
+                    responseParagraph.textContent = `Errore nell'invio: ${error.message}`;
+                    responseParagraph.style.color = 'red';
+                }
+            });
+        });
+
+        // Inizio scansione QR
+        function startQRScanner() {
+            qrReader.start({ facingMode: "environment" }, {
+                fps: 10,
+                qrbox: 250
+            }, (decodedText, decodedResult) => {
+                qrResult.textContent = `QR Scansionato: ${decodedText}`;
+                qrReader.stop();
+                controlPanel.style.display = 'block';
+                selectionPanel.style.display = 'block';
+            }, (errorMessage) => {
+                console.error(errorMessage);
+            }).catch(err => {
+                qrResult.textContent = `Errore nel QR scanner: ${err.message}`;
+            });
+        }
     </script>
 </body>
 </html>
